@@ -1,0 +1,20 @@
+{
+  "name": "cowork-data-bridge",
+  "version": "0.1.0",
+  "description": "MCP server that answers natural-language data questions with headless Claude Code, a project's repository as context and a read-only database connection.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "cowork-data-bridge": "server.mjs"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32",
+    "zod": "^3.25 || ^4"
+  }
+}

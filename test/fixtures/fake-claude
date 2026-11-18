@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+args=("$@")
+prompt=""
+for ((i = 0; i < ${#args[@]}; i++)); do
+  if [[ "${args[$i]}" == "-p" ]]; then prompt="${args[$((i + 1))]:-}"; break; fi
+done
+[[ -n "${FAKE_CLAUDE_PIDFILE:-}" ]] && echo $$ > "$FAKE_CLAUDE_PIDFILE"
+
+base='"session_id":"00000000-0000-0000-0000-000000000000","duration_ms":12,"num_turns":1,"total_cost_usd":0,"permission_denials":[],"api_error_status":null'
+case "$prompt" in
+  *HANG*)
+    [[ -n "${FAKE_CLAUDE_IGNORE_TERM:-}" ]] && trap '' TERM
+    while true; do sleep 1; done
+    ;;
+  *SLOW*)
+    if [[ -n "${FAKE_CLAUDE_LOG:-}" ]]; then echo start >> "$FAKE_CLAUDE_LOG"; fi
+    sleep 0.3
+    if [[ -n "${FAKE_CLAUDE_LOG:-}" ]]; then echo end >> "$FAKE_CLAUDE_LOG"; fi
+    echo "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"slow done\",$base}"
+    ;;
+  *FAIL*)
+    echo "fatal: could not connect to postgresql://admin:s3cret@db.internal:5432/app" >&2
+    exit 3
+    ;;
+  *MAXTURNS*)
+    echo "{\"type\":\"result\",\"subtype\":\"error_max_turns\",\"is_error\":true,\"terminal_reason\":\"max_turns\",$base}"
+    exit 1
+    ;;
+  *GARBAGE*)
+    echo "this is not json"
+    ;;
+  *)
+    echo "noise before the result"
+    exec node -e '
+      const report = { argv: process.argv.slice(1), cwd: process.cwd(), databaseUri: process.env.DATABASE_URI ?? null };
+      console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: JSON.stringify(report),
+        session_id: "00000000-0000-0000-0000-000000000000", duration_ms: 12, num_turns: 1, total_cost_usd: 0,
+        permission_denials: [], api_error_status: null }));
+    ' -- "$@"
+    ;;
+esac

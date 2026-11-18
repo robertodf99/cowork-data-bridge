@@ -1,0 +1,5 @@
+/projects/*
+!/projects/_example/
+node_modules/
+*.log
+.env*

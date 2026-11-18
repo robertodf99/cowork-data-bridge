@@ -1,0 +1,1 @@
+{ "description": "Custom settings", "repo": "../../repo", "maxTurns": 5, "timeoutMs": 1234, "allowedTools": ["mcp__db__execute_sql", "mcp__db__list_objects"] }
