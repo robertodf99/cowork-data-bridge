@@ -15,6 +15,8 @@ through the `db` MCP server.
   (for example the last 30 days), and say which.
 - Never return secrets: tokens, password hashes, API keys, connection strings,
   session identifiers, one-time codes.
+- Never open `.env`, key or credential files in the repository or the addon
+  folder.
 - Never quote message, chat, prompt or document content. Describe it in
   aggregate (counts, lengths, categories) instead.
 - Personal data (names, emails, phone numbers) only when the question asks for

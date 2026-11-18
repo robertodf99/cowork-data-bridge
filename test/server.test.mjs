@@ -141,6 +141,28 @@ test('MCP ask runs one question at a time per project, projects in parallel', { 
   }
 });
 
+test('cancelling an MCP ask stops the run and frees the project queue', { timeout: 20000 }, async () => {
+  const marker = path.join(tmp, 'cancel-marker');
+  const pidfile = path.join(tmp, 'cancel-pid');
+  const client = await connect({ FIXTURE_MARKER: marker, FAKE_CLAUDE_PIDFILE: pidfile });
+  try {
+    const controller = new AbortController();
+    const pending = client.callTool({ name: 'ask', arguments: { project: 'demo', question: 'HANG' } }, undefined, { signal: controller.signal })
+      .catch((err) => err);
+    assert.ok(await waitFor(() => existsSync(pidfile)), 'ask started');
+    controller.abort();
+    assert.ok((await pending) instanceof Error, 'client call rejected');
+    assert.ok(await waitFor(() => existsSync(marker)), 'connect.sh trap ran');
+    assert.equal(readFileSync(marker, 'utf8').trim(), 'cleaned');
+    const started = Date.now();
+    const next = await ask(client, 'demo', 'How many users?');
+    assert.equal(next.isError, undefined, text(next));
+    assert.ok(Date.now() - started < 3000, `next ask took ${Date.now() - started} ms`);
+  } finally {
+    await client.close();
+  }
+});
+
 test('closing the MCP client stops in-flight asks and lets connect.sh clean up', { timeout: 20000 }, async () => {
   const marker = path.join(tmp, 'shutdown-marker');
   const pidfile = path.join(tmp, 'shutdown-pid');

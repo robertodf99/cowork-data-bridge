@@ -17,9 +17,9 @@ const USAGE = `Usage:
 const questionSchema = z.string().min(1).max(4000);
 const serialize = createSerializer();
 
-async function ask(projectName, question) {
+async function ask(projectName, question, signal) {
   const project = await loadProject(projectsDir(), projectName);
-  return serialize(project.name, () => runAsk(project, question));
+  return serialize(project.name, () => runAsk(project, question, { signal }));
 }
 
 let shuttingDown = false;
@@ -56,7 +56,7 @@ function serve() {
       params: { progressToken, progress: n, message: `Still working (${(n * PROGRESS_INTERVAL_MS) / 1000}s)` },
     }), PROGRESS_INTERVAL_MS);
     try {
-      const result = await ask(project, question);
+      const result = await ask(project, question, extra.signal);
       return result.ok
         ? { content: [{ type: 'text', text: result.text }] }
         : { content: [{ type: 'text', text: result.message }], isError: true };

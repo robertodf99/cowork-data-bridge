@@ -2,7 +2,12 @@
   "mcpServers": {
     "db": {
       "command": "uvx",
-      "args": ["postgres-mcp==0.3.0", "--access-mode=restricted"],
+      "args": [
+        "--python", "3.12",
+        "--overrides", "postgres-mcp-overrides.txt",
+        "postgres-mcp==0.3.0",
+        "--access-mode=restricted"
+      ],
       "env": {
         "DATABASE_URI": "${DATABASE_URI}"
       }

@@ -63,6 +63,56 @@ test('runAsk returns a redacted error on non-zero exit', { timeout: 15000 }, asy
   assert.doesNotMatch(r.message, /s3cret|pa55/);
 });
 
+test('runAsk caps a huge timeout instead of letting setTimeout overflow to 1 ms', { timeout: 15000 }, async () => {
+  const r = await runAsk(demo, 'SLOW', { env: envWith(), timeoutMs: 10 ** 12 });
+  assert.equal(r.ok, true, r.message);
+});
+
+test('runAsk appends WARNING lines that connect.sh prints while cleaning up', { timeout: 15000 }, async () => {
+  const r = await runAsk(demo, 'SLOW', { env: envWith({ FIXTURE_WARN: '1' }) });
+  assert.equal(r.ok, true, r.message);
+  assert.equal(r.text, 'slow done\n\nBridge warnings:\nWARNING: could not close tunnel to [IP]');
+});
+
+test('runAsk does not start a run whose signal is already aborted', { timeout: 15000 }, async () => {
+  const pidfile = path.join(tmp, 'preabort-pid');
+  const r = await runAsk(demo, 'hello', { env: envWith({ FAKE_CLAUDE_PIDFILE: pidfile }), signal: AbortSignal.abort() });
+  assert.equal(r.ok, false);
+  assert.match(r.message, /cancelled/i);
+  assert.equal(existsSync(pidfile), false);
+});
+
+test('runAsk stops the process group when its signal aborts and lets connect.sh clean up', { timeout: 15000 }, async () => {
+  const marker = path.join(tmp, 'abort-marker');
+  const pidfile = path.join(tmp, 'abort-pid');
+  const controller = new AbortController();
+  const pending = runAsk(demo, 'HANG', {
+    env: envWith({ FIXTURE_MARKER: marker, FAKE_CLAUDE_PIDFILE: pidfile }), signal: controller.signal, timeoutMs: 60000, graceMs: 5000,
+  });
+  assert.ok(await waitFor(() => existsSync(pidfile)), 'run started');
+  controller.abort();
+  const r = await pending;
+  assert.match(r.message, /cancelled by the client/i);
+  assert.equal(readFileSync(marker, 'utf8').trim(), 'cleaned');
+});
+
+test('a queued run cancelled before its turn never starts', { timeout: 15000 }, async () => {
+  const serialize = createSerializer();
+  const pidfile = path.join(tmp, 'queue-first-pid');
+  const log = path.join(tmp, 'queue-second.log');
+  const first = new AbortController();
+  const second = new AbortController();
+  const a = serialize('demo', () => runAsk(demo, 'HANG', { env: envWith({ FAKE_CLAUDE_PIDFILE: pidfile }), signal: first.signal, graceMs: 5000 }));
+  const b = serialize('demo', () => runAsk(demo, 'SLOW', { env: envWith({ FAKE_CLAUDE_LOG: log }), signal: second.signal }));
+  assert.ok(await waitFor(() => existsSync(pidfile)), 'first run started');
+  second.abort();
+  first.abort();
+  const [ra, rb] = await Promise.all([a, b]);
+  assert.match(ra.message, /cancelled/i);
+  assert.match(rb.message, /cancelled/i);
+  assert.equal(existsSync(log), false, 'second run never started');
+});
+
 test('runAsk reports is_error results and unparsable output', { timeout: 15000 }, async () => {
   assert.match((await runAsk(demo, 'MAXTURNS', { env: envWith() })).message, /error_max_turns/);
   assert.match((await runAsk(demo, 'GARBAGE', { env: envWith() })).message, /parse/i);

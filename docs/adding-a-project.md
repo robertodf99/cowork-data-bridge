@@ -1,7 +1,8 @@
 # Adding a project
 
-A project is a folder with four files (`project.json`, `mcp.json`,
-`connect.sh`, `CLAUDE.md`). It holds private connection details, so it never
+A project is a folder with `project.json`, `mcp.json`, `connect.sh`,
+`CLAUDE.md` and, with the default database server,
+`postgres-mcp-overrides.txt`. It holds private connection details, so it never
 goes into version control:
 
 - inside this repository as `projects/<name>/`, which `.gitignore` excludes,
@@ -39,7 +40,7 @@ and README.md.
 - Read-only mechanism: <PGOPTIONS default_transaction_read_only / read-only role / replica>
 - Optional settings: <timeoutMs / maxTurns / allowedTools, or "defaults">
 
-Copy projects/_example/ to the addon location and adapt the four files as
+Copy projects/_example/ to the addon location and adapt the files as
 described in section 3 of docs/adding-a-project.md. Read the project
 repository (schema files, domain docs) to write the "where to start" and
 "main tables" parts of CLAUDE.md, and list the columns that hold secrets or
@@ -67,24 +68,44 @@ Optional keys: `"timeoutMs"` (positive integer, overrides
 `"allowedTools"` (array of tool names such as `"mcp__db__execute_sql"`; replaces
 the default `mcp__<server>__*` for each server in `mcp.json`).
 
-### `mcp.json`
+### `mcp.json` and `postgres-mcp-overrides.txt`
 
-Keep the template unless the database is not Postgres:
+Keep both from the template unless the database is not Postgres:
 
 ```json
 {
   "mcpServers": {
     "db": {
       "command": "uvx",
-      "args": ["postgres-mcp==0.3.0", "--access-mode=restricted"],
+      "args": [
+        "--python", "3.12",
+        "--overrides", "postgres-mcp-overrides.txt",
+        "postgres-mcp==0.3.0",
+        "--access-mode=restricted"
+      ],
       "env": { "DATABASE_URI": "${DATABASE_URI}" }
     }
   }
 }
 ```
 
-`${DATABASE_URI}` is expanded by Claude Code from the environment that
-`connect.sh` sets up. Never write a real URL in this file.
+```text
+pglast>=7.20,<8
+mcp[cli]>=1.5,<2
+```
+
+`postgres-mcp==0.3.0` no longer installs on its own (it pins a `pglast`
+version that was removed from PyPI and breaks with `mcp` 2.x); the overrides
+file fixes that. Its path is relative because Claude Code starts MCP servers
+in the addon folder. `${DATABASE_URI}` is expanded by Claude Code from the
+environment that `connect.sh` sets up. Never write a real URL in this file.
+
+Check that the server starts, without a database, from the addon folder:
+
+```sh
+cd projects/<name>
+uvx --python 3.12 --overrides postgres-mcp-overrides.txt postgres-mcp==0.3.0 --access-mode=restricted --help
+```
 
 ### `connect.sh`
 
@@ -100,7 +121,11 @@ arguments and must:
    to stderr (the bridge reads the answer from stdout);
 6. close what it opened on exit, including on `SIGTERM` (a `trap`). It gets 30
    seconds before `SIGKILL`;
-7. never print the URL or credentials.
+7. if it opens temporary access (a firewall rule, a tunnel), reclaim anything
+   a previous interrupted run left behind instead of reusing it, and print a
+   line starting with `WARNING` to stderr when cleanup fails (the bridge
+   appends those lines to the answer);
+8. never print the URL or credentials.
 
 If the project already has a connect script with a "run a command" mode, wrap
 it and redirect its own stdout to stderr while keeping the command's stdout:
@@ -123,7 +148,9 @@ exec /path/to/existing-connect.sh prod run -- bash -c '
 
 ### `CLAUDE.md`
 
-Start from the template and add:
+Required: the bridge passes it to Claude Code with
+`--append-system-prompt-file` (with `--restricted`, `CLAUDE.md` files are not
+loaded automatically). Start from the template and add:
 
 - **Where to start**: the files in the repository that explain the domain and
   the schema (for example `docs/INDEX.md`, `src/db/schema/`).
@@ -134,11 +161,16 @@ Start from the template and add:
 - Project conventions: timezone for day/week/month boundaries, how to
   recognise internal or test accounts (always stated as an assumption).
 
+The analyst can read every file in the addon folder and the repository except
+`.env*`, `*.pem` and `*.key`, which the bridge denies. Keep other secrets out
+of both folders.
+
 ## 4. Verify
 
 ```sh
-# syntax and permissions
+# syntax, permissions and required files
 bash -n projects/<name>/connect.sh && test -x projects/<name>/connect.sh
+ls projects/<name>/{project.json,mcp.json,connect.sh,CLAUDE.md,postgres-mcp-overrides.txt}
 
 # the addon is listed
 node server.mjs list
@@ -158,6 +190,9 @@ cheap question and read the answer and its "How this was computed" section:
 ```sh
 node server.mjs ask <name> "How many rows does the largest table have? Do not return any row data."
 ```
+
+Do not run CLI asks for a project while Claude Desktop may be asking about
+the same project: the one-question-at-a-time queue is per bridge process.
 
 `list_projects` reads the folder on every call, so a running server sees the
 new project without a restart (a restart is needed only after changing the

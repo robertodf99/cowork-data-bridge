@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-trap 'echo cleaned > "${FIXTURE_MARKER:-/dev/null}"' EXIT
+trap 'echo cleaned > "${FIXTURE_MARKER:-/dev/null}"; if [[ -n "${FIXTURE_WARN:-}" ]]; then echo "WARNING: could not close tunnel to 10.0.0.7" >&2; fi' EXIT
 if [[ -n "${FIXTURE_IGNORE_TERM:-}" ]]; then trap '' TERM; else trap 'exit 143' TERM; fi
 if [[ -n "${FIXTURE_STRAGGLER_PIDFILE:-}" ]]; then
   sleep 20 &
